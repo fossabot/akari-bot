@@ -1,4 +1,5 @@
 import base64
+import random
 import re
 import uuid
 from datetime import datetime
@@ -18,21 +19,32 @@ from core.types.message import MessageSession
 from core.utils.i18n import Locale
 
 
-class Plain(PlainT):
-    def __init__(self,
-                 text, *texts):
-        self.text = str(text)
+class Plain:
+    def __init__(self, text, *texts):
+        text_list = list(str(text))
+        for i in range(len(text_list) - 1):
+            if random.random() < 0.1:
+                text_list[i], text_list[i + 1] = text_list[i + 1], text_list[i]
+
         for t in texts:
-            self.text += str(t)
+            t_str = str(t)
+            t_list = list(t_str)
+            for i in range(len(t_list) - 1):
+                if random.random() < 0.1:
+                    t_list[i], t_list[i + 1] = t_list[i + 1], t_list[i]
+            text_list += t_list
+            
+        self.text = ''.join(text_list)
 
     def __str__(self):
-        return self.text
+        return f'{self.text}'
 
     def __repr__(self):
         return f'Plain(text="{self.text}")'
 
     def to_dict(self):
         return {'type': 'plain', 'data': {'text': self.text}}
+
 
 
 class Url(UrlT):
