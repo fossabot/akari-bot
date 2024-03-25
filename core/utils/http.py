@@ -2,6 +2,7 @@ import asyncio.exceptions
 import re
 import socket
 import urllib.parse
+from http.cookies import SimpleCookie
 from typing import Union
 
 import aiohttp
@@ -39,7 +40,7 @@ def private_ip_check(url: str):
 
 async def get_url(url: str, status_code: int = False, headers: dict = None, params: dict = None, fmt=None, timeout=20,
                   attempt=3,
-                  request_private_ip=False, logging_err_resp=True):
+                  request_private_ip=False, logging_err_resp=True, cookies=None):
     """利用AioHttp获取指定url的内容。
 
     :param url: 需要获取的url。
@@ -51,6 +52,7 @@ async def get_url(url: str, status_code: int = False, headers: dict = None, para
     :param attempt: 指定请求尝试次数。
     :param request_private_ip: 是否允许请求私有IP。
     :param logging_err_resp: 是否记录错误响应。
+    :param cookies: 使用的cookies。
     :returns: 指定url的内容（字符串）。
     """
 
@@ -63,6 +65,11 @@ async def get_url(url: str, status_code: int = False, headers: dict = None, para
 
         async with aiohttp.ClientSession(headers=headers,
                                          connector=TCPConnector(verify_ssl=False) if debug else None, ) as session:
+            if cookies:
+                ck = SimpleCookie()
+                ck.load(cookies)
+                session.cookie_jar.update_cookies(ck)
+                Logger.info(f'Using cookies: {ck}')
             try:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout), headers=headers,
                                        proxy=proxy, params=params) as req:
@@ -74,7 +81,7 @@ async def get_url(url: str, status_code: int = False, headers: dict = None, para
                             Logger.error(await req.read())
                         raise ValueError(
                             f'{str(req.status)}[Ke:Image,path=https://http.cat/{str(req.status)}.jpg]')
-                    if fmt is not None:
+                    if fmt:
                         if hasattr(req, fmt):
                             return await getattr(req, fmt)()
                         else:
@@ -85,15 +92,16 @@ async def get_url(url: str, status_code: int = False, headers: dict = None, para
             except asyncio.exceptions.TimeoutError:
                 raise ValueError(f'Request timeout.')
             except Exception as e:
-                Logger.error(f'Error while requesting {url}: {e}')
+                Logger.error(f'Error while requesting {url}: \n{e}')
                 raise e
 
     return await get_()
 
 
 async def post_url(url: str, data: any = None, status_code: int = False, headers: dict = None, fmt=None, timeout=20,
-                   attempt=3, request_private_ip=False, logging_err_resp=True):
-    '''发送POST请求。
+                   attempt=3, request_private_ip=False, logging_err_resp=True, cookies=None):
+    '''利用AioHttp发送POST请求。
+
     :param url: 需要发送的url。
     :param data: 需要发送的数据。
     :param status_code: 指定请求到的状态码，若不符则抛出ValueError。
@@ -103,7 +111,8 @@ async def post_url(url: str, data: any = None, status_code: int = False, headers
     :param attempt: 指定请求尝试次数。
     :param request_private_ip: 是否允许请求私有IP。
     :param logging_err_resp: 是否记录错误响应。
-    :returns: 发送请求后的响应。'''
+    :param cookies: 使用的 cookies。
+    :returns: 指定url的内容（字符串）。'''
 
     @retry(stop=stop_after_attempt(attempt), wait=wait_fixed(3), reraise=True)
     async def _post():
@@ -113,6 +122,10 @@ async def post_url(url: str, data: any = None, status_code: int = False, headers
 
         async with aiohttp.ClientSession(headers=headers,
                                          connector=TCPConnector(verify_ssl=False) if debug else None, ) as session:
+            if cookies:
+                ck = SimpleCookie()
+                ck.load(cookies)
+                session.cookie_jar.update_cookies(ck)
             try:
                 async with session.post(url, data=data, headers=headers,
                                         timeout=aiohttp.ClientTimeout(total=timeout),
@@ -125,7 +138,7 @@ async def post_url(url: str, data: any = None, status_code: int = False, headers
                             Logger.error(await req.read())
                         raise ValueError(
                             f'{str(req.status)}[Ke:Image,path=https://http.cat/{str(req.status)}.jpg]')
-                    if fmt is not None:
+                    if fmt:
                         if hasattr(req, fmt):
                             return await getattr(req, fmt)()
                         else:
@@ -157,7 +170,8 @@ async def download_to_cache(url: str, filename=None, status_code: int = False, m
     :param attempt: 指定请求尝试次数。
     :param request_private_ip: 是否允许请求私有IP。
     :param logging_err_resp: 是否记录错误响应。
-    :returns: 文件的相对路径，若获取失败则返回False。'''
+    :returns: 文件的相对路径，若获取失败则返回False。
+    '''
 
     if post_data is not None:
         method = 'POST'
@@ -177,9 +191,12 @@ async def download_to_cache(url: str, filename=None, status_code: int = False, m
                                   timeout=timeout, attempt=1, request_private_ip=request_private_ip,
                                   logging_err_resp=logging_err_resp)
 
-        if data is not None:
-            if filename is None:
-                ftt = ft.match(data).extension
+        if data:
+            if not filename:
+                try:
+                    ftt = ft.match(data).extension
+                except AttributeError:
+                    ftt = 'txt'
                 path = f'{random_cache_path()}.{ftt}'
             else:
                 path = Config("cache_path") + f'/{filename}'

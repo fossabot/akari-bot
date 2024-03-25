@@ -1,13 +1,16 @@
 import os
+import traceback
 import urllib.parse
-
 from PIL import Image
 
 from config import Config
 from core.builtins import Bot, Image as BImage
 from core.component import module
-from core.dirty_check import check_bool, rickroll
+from core.dirty_check import rickroll
+from core.exceptions import ConfigValueError
 from core.utils.http import download_to_cache, get_url
+from .check import secret_check
+
 
 appid = Config('wolfram_alpha_appid')
 
@@ -20,13 +23,12 @@ w = module(
 
 
 @w.handle('<query> {{wolframalpha.help}}')
-async def _(msg: Bot.MessageSession):
-    query = msg.parsed_msg['<query>']
-    if await check_bool(query):
+async def _(msg: Bot.MessageSession, query: str):
+    if await secret_check(query):
         await msg.finish(rickroll(msg))
     url_query = urllib.parse.quote(query)
     if not appid:
-        raise ConfigError(msg.locale.t('error.config.secret.not_found'))
+        raise ConfigValueError(msg.locale.t('error.config.secret.not_found'))
     url = f"http://api.wolframalpha.com/v1/simple?appid={appid}&i={url_query}&units=metric"
 
     try:
@@ -40,22 +42,23 @@ async def _(msg: Bot.MessageSession):
     except ValueError as e:
         if str(e).startswith('501'):
             await msg.finish(msg.locale.t('wolframalpha.message.incomprehensible'))
+        else:
+            traceback.print_exc()
 
 
 @w.handle('ask <question> {{wolframalpha.help.ask}}')
-async def _(msg: Bot.MessageSession):
-    query = msg.parsed_msg['<question>']
-    if await check_bool(query):
+async def _(msg: Bot.MessageSession, question: str):
+    if await secret_check(question):
         await msg.finish(rickroll(msg))
-    url_query = urllib.parse.quote(query)
+    url_query = urllib.parse.quote(question)
     if not appid:
-        raise ConfigError(msg.locale.t('error.config.secret.not_found'))
+        raise ConfigValueError(msg.locale.t('error.config.secret.not_found'))
     url = f"http://api.wolframalpha.com/v1/result?appid={appid}&i={url_query}&units=metric"
     try:
         data = await get_url(url, 200)
-        if await check_bool(data):
-            await msg.finish(rickroll(msg))
         await msg.finish(data)
     except ValueError as e:
         if str(e).startswith('501'):
             await msg.finish(msg.locale.t('wolframalpha.message.incomprehensible'))
+        else:
+            traceback.print_exc()

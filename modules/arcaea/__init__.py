@@ -1,45 +1,25 @@
 import os
 
 from PIL import Image, ImageDraw, ImageFont
-import urllib.parse
 
-from config import CFG
-from core.builtins import Bot, Image as Img, Plain
+from core.builtins import Bot, Image as BImage, Plain
 from core.component import module
-from core.logger import Logger
 from core.utils.cache import random_cache_path
 from core.utils.http import get_url
+from core.utils.web_render import webrender
 
 
 assets_path = os.path.abspath('./assets/arcaea')
-web_render = CFG.get_url('web_render')
-web_render_local = CFG.get_url('web_render_local')
 
 
 arc = module('arcaea', developers=['OasisAkari'], desc='{arcaea.help.desc}',
              alias=['a', 'arc'])
 
 
-class WithErrCode(Exception):
-    pass
-
-
-@arc.command('b30')
-async def _(msg: Bot.MessageSession):
-    await msg.send_message([Plain(msg.locale.t("arcaea.message.sb616")),
-                            Img(os.path.abspath('./assets/arcaea/noc.jpg'))])
-
-
 @arc.command('download {{arcaea.help.download}}')
-async def _(msg: Bot.MessageSession, use_local=True):
-    if not web_render_local:
-        if not web_render:
-            Logger.warn('[Webrender] Webrender is not configured.')
-            await msg.finish(msg.locale.t("error.config.webrender.invalid"))
-        use_local = False
-    resp = await get_url((web_render_local if use_local else web_render) + 'source?url=' +
-                         urllib.parse.quote('https://webapi.lowiro.com/webapi/serve/static/bin/arcaea/apk/'), 200,
-                         fmt='json', request_private_ip=True)
+async def _(msg: Bot.MessageSession):
+    url = 'https://webapi.lowiro.com/webapi/serve/static/bin/arcaea/apk/'
+    resp = await get_url(webrender('source', url), 200, fmt='json', request_private_ip=True)
     if resp:
         await msg.finish([Plain(msg.locale.t("arcaea.message.download", version=resp["value"]["version"],
                                              url=resp['value']['url']))])
@@ -48,42 +28,29 @@ async def _(msg: Bot.MessageSession, use_local=True):
 
 
 @arc.command('random {{arcaea.help.random}}')
-async def _(msg: Bot.MessageSession, use_local=True):
-    if not web_render_local:
-        if not web_render:
-            Logger.warn('[Webrender] Webrender is not configured.')
-            await msg.finish(msg.locale.t("error.config.webrender.invalid"))
-        use_local = False
-    resp = await get_url((web_render_local if use_local else web_render) + 'source?url=' +
-                         urllib.parse.quote('https://webapi.lowiro.com/webapi/song/showcase/'),
-                         200, fmt='json', request_private_ip=True)
+async def _(msg: Bot.MessageSession):
+    url = 'https://webapi.lowiro.com/webapi/song/showcase/'
+    resp = await get_url(webrender('source', url), 200, fmt='json', request_private_ip=True)
     if resp:
         value = resp["value"][0]
         image = f'{assets_path}/jacket/{value["song_id"]}.jpg'
         result = [Plain(value["title"]["en"])]
         if os.path.exists(image):
-            result.append(Img(path=image))
+            result.append(BImage(path=image))
         await msg.finish(result)
     else:
         await msg.finish(msg.locale.t("arcaea.message.get_failed"))
 
 
-@arc.command('rank free {{arcaea.help.rank.free}}', 
+@arc.command('rank free {{arcaea.help.rank.free}}',
              'rank paid {{arcaea.help.rank.paid}}')
-async def _(msg: Bot.MessageSession, use_local=True):
-    if not web_render_local:
-        if not web_render:
-            Logger.warn('[Webrender] Webrender is not configured.')
-            await msg.finish(msg.locale.t("error.config.webrender.invalid"))
-        use_local = False
+async def _(msg: Bot.MessageSession):
     if msg.parsed_msg.get('free', False):
-        resp = await get_url((web_render_local if use_local else web_render) + 'source?url=' +
-                             urllib.parse.quote('https://webapi.lowiro.com/webapi/song/rank/free/'),
-                             200, fmt='json', request_private_ip=True)
+        url = 'https://webapi.lowiro.com/webapi/song/rank/free/'
+        resp = await get_url(webrender('source', url), 200, fmt='json', request_private_ip=True)
     else:
-        resp = await get_url((web_render_local if use_local else web_render) + 'source?url=' +
-                             urllib.parse.quote('https://webapi.lowiro.com/webapi/song/rank/paid/'),
-                             200, fmt='json', request_private_ip=True)
+        url = 'https://webapi.lowiro.com/webapi/song/rank/paid/'
+        resp = await get_url(webrender('source', url), 200, fmt='json', request_private_ip=True)
     if resp:
         r = []
         rank = 0
@@ -109,17 +76,15 @@ async def _(msg: Bot.MessageSession, score: int, rating: float):
 p = module('ptt', developers=['OasisAkari'])
 
 
-@p.command('<potential> {{ptt.help}}')
-async def pttimg(msg: Bot.MessageSession):
-    ptt = msg.parsed_msg['<potential>']
-    # ptt
+@p.command('<ptt> {{ptt.help}}')
+async def pttimg(msg: Bot.MessageSession, ptt: str):
     if ptt == '--':
         ptt = -1
     else:
         try:
             ptt = float(ptt)
         except ValueError:
-            await msg.finish(msg.locale.t('ptt.message.error.invalid'))
+            await msg.finish(msg.locale.t('ptt.message.invalid'))
     if ptt >= 13.00:
         pttimg = 7
     elif ptt >= 12.50:
@@ -172,7 +137,7 @@ async def pttimg(msg: Bot.MessageSession):
         drawptt = ImageDraw.Draw(pttimg)
         drawptt.text((0, 0), ptt, 'white', font=font1, stroke_width=3, stroke_fill='#52495d')
     else:
-        return await msg.finish(msg.locale.t('ptt.message.error.invalid'))
+        return await msg.finish(msg.locale.t('ptt.message.invalid'))
     pttimg_width, pttimg_height = pttimg.size
     ptttext.alpha_composite(pttimg,
                             (int((ptttext_width - pttimg_width) / 2), int((ptttext_height - pttimg_height) / 2) - 11))
@@ -180,4 +145,4 @@ async def pttimg(msg: Bot.MessageSession):
     pttimgr.alpha_composite(ptttext, (0, 0))
     savepath = random_cache_path() + '.png'
     pttimgr.save(savepath)
-    await msg.finish([Img(path=savepath)])
+    await msg.finish([BImage(path=savepath)])

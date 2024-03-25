@@ -54,7 +54,7 @@ async def auth(token: str):
 @app.get('/target/{target_id}')
 async def get_target(target_id: str):
     target = BotDBUtil.TargetInfo(target_id)
-    if target.query is None:
+    if not target.query:
         return JSONResponse(status_code=404, content={
             'target_id': target_id,
             'notFound': True,
@@ -70,7 +70,9 @@ async def get_target(target_id: str):
     ban = target.get_option('ban')
     typo_check = target.get_option('typo_check')
     dice_dc_reversed = target.get_option('dice_dc_reversed')
+    dice_default_face = target.get_option('dice_default_face')
     wiki_fandom_addon = target.get_option('wiki_fandom_addon')
+    wordle_dark_theme = target.get_option('wordle_dark_theme')
 
     wiki_target = WikiTargetInfo(target_id)
     wiki_headers = wiki_target.get_headers()
@@ -88,7 +90,9 @@ async def get_target(target_id: str):
         'commandPrefix': command_prefix,
         'ban': ban,
         'typoCheck': typo_check,
-        'diceDcReversed': dice_dc_reversed,
+        'diceDCReversed': dice_dc_reversed,
+        'diceDefaultFace': dice_default_face,
+        'wordleDarkTheme': wordle_dark_theme,
         'wiki': {
             'fandomAddon': wiki_fandom_addon,
             'headers': wiki_headers,

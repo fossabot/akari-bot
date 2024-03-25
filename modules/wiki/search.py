@@ -9,26 +9,26 @@ from modules.wiki.utils.wikilib import WikiLib
 from .wiki import wiki, query_pages
 
 
-@wiki.command('search <PageName> {{wiki.help.search}}')
-async def _(msg: Bot.MessageSession):
-    await search_pages(msg, msg.parsed_msg['<PageName>'])
+@wiki.command('search <pagename> {{wiki.help.search}}')
+async def _(msg: Bot.MessageSession, pagename: str):
+    await search_pages(msg, pagename)
 
 
-async def search_pages(session: Bot.MessageSession, title: Union[str, list, tuple], use_prefix=True):
-    target = WikiTargetInfo(session)
+async def search_pages(msg: Bot.MessageSession, title: Union[str, list, tuple], use_prefix=True):
+    target = WikiTargetInfo(msg)
     start_wiki = target.get_start_wiki()
     interwiki_list = target.get_interwikis()
     headers = target.get_headers()
     prefix = target.get_prefix()
-    enabled_fandom_addon = session.options.get('wiki_fandom_addon')
-    if start_wiki is None:
-        await session.send_message(session.locale.t('wiki.message.set.default', prefix=session.prefixes[0]))
+    enabled_fandom_addon = msg.options.get('wiki_fandom_addon')
+    if not start_wiki:
+        await msg.send_message(msg.locale.t('wiki.message.set.default', prefix=msg.prefixes[0]))
         start_wiki = 'https://zh.minecraft.wiki/api.php'
     if isinstance(title, str):
         title = [title]
     query_task = {start_wiki: {'query': [], 'iw_prefix': ''}}
     for t in title:
-        if prefix is not None and use_prefix:
+        if prefix and use_prefix:
             t = prefix + t
         if t[0] == ':':
             if len(t) > 1:
@@ -85,14 +85,18 @@ async def search_pages(session: Bot.MessageSession, title: Union[str, list, tupl
             for r in result:
                 wait_msg_list.append(iw_prefix + r)
     if len(wait_msg_list) != 0:
-        msg_list.append(session.locale.t('wiki.message.search'))
+        msg_list.append(msg.locale.t('wiki.message.search'))
         i = 0
         for w in wait_msg_list:
             i += 1
             w = f'{i}. {w}'
             msg_list.append(w)
-        msg_list.append(session.locale.t('wiki.message.search.prompt'))
-    reply = await session.wait_reply(Plain('\n'.join(msg_list)))
+        msg_list.append(msg.locale.t('wiki.message.search.prompt'))
+    else:
+        await msg.finish(msg.locale.t('wiki.message.search.not_found'))
+    reply = await msg.wait_reply(Plain('\n'.join(msg_list)))
     if reply.as_display(text_only=True).isdigit():
         reply_number = int(reply.as_display(text_only=True)) - 1
         await query_pages(reply, wait_msg_list[reply_number])
+    else:
+        await msg.finish()

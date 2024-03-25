@@ -3,8 +3,7 @@
 from config import Config
 from core.builtins import Bot
 from core.component import module
-from core.petal import gained_petal, lost_petal
-from core.utils.cooldown import CoolDown
+from core.exceptions import ConfigValueError
 from .zhNum2Int import Zh2Int
 
 MAX_COIN_NUM = Config('coin_limit', 10000)
@@ -35,74 +34,52 @@ async def _(message: Bot.MessageSession):
 
 
 async def flipCoins(count: int, msg):
-    if FACE_UP_RATE + FACE_DOWN_RATE > 10000 or FACE_UP_RATE < 0 or FACE_DOWN_RATE < 0 or MAX_COIN_NUM <= 0:
-        raise OverflowError(msg.locale.t("error.config.invalid"))
-    if count > MAX_COIN_NUM:
-        return msg.locale.t("coin.message.error.out_of_range", max=MAX_COIN_NUM)
-    if count == 0:
-        return msg.locale.t("coin.message.error.nocoin")
-    if count < 0:
-        return msg.locale.t("coin.message.error.amount")
+    if not all([FACE_UP_RATE + FACE_DOWN_RATE <= MAX_COIN_NUM, FACE_UP_RATE >= 0,
+                FACE_DOWN_RATE >= 0, MAX_COIN_NUM > 0]):
+        raise ConfigValueError(msg.locale.t("error.config.invalid"))
+    elif count > MAX_COIN_NUM:
+        return msg.locale.t("coin.message.invalid.out_of_range", max=MAX_COIN_NUM)
+    elif count < 0:
+        return msg.locale.t("coin.message.invalid.amount")
+    elif count == 0:
+        return msg.locale.t("coin.message.nocoin")
+
     face_up = 0
     face_down = 0
     stand = 0
     for i in range(count):
-        rand_num = secrets.randbelow(10000)
+        rand_num = secrets.randbelow(MAX_COIN_NUM)
         if rand_num < FACE_UP_RATE:
             face_up += 1
         elif rand_num < FACE_UP_RATE + FACE_DOWN_RATE:
             face_down += 1
         else:
             stand += 1
-    head = msg.locale.t("coin.message.prompt", count=count)
     if count == 1:
+        prompt = msg.locale.t("coin.message.single.prompt")
         if face_up:
-            return head + msg.locale.t("coin.message.head")
+            return prompt + "\n" + msg.locale.t("coin.message.single.head")
         elif face_down:
-            return head + msg.locale.t("coin.message.tail")
+            return prompt + "\n" + msg.locale.t("coin.message.single.tail")
         else:
-            return head + msg.locale.t("coin.message.stand")
+            return prompt + "\n" + msg.locale.t("coin.message.single.stand")
     else:
+        prompt = msg.locale.t("coin.message.all.prompt", count=count)
         if not (stand or face_down):
-            return head + msg.locale.t("coin.message.all.head")
+            return prompt + "\n" + msg.locale.t("coin.message.all.head")
         if not (stand or face_up):
-            return head + msg.locale.t("coin.message.all.tail")
+            return prompt + "\n" + msg.locale.t("coin.message.all.tail")
         if not (face_up or face_down):
-            return head + msg.locale.t("coin.message.all.stand")
-        output = head + msg.locale.t("coin.message.mix")
-        if face_up:
+            return prompt + "\n" + msg.locale.t("coin.message.all.stand")
+        output = msg.locale.t("coin.message.mix.prompt", count=count) + "\n"
+        if face_up and face_down:
+            output += msg.locale.t("coin.message.mix.head_and_tail", head=face_up, tail=face_down)
+        elif face_up:
             output += msg.locale.t("coin.message.mix.head", head=face_up)
         elif face_down:
-            output += msg.locale.t("coin.message.mix.tail2", tail=face_down)
-        if face_up and face_down:
             output += msg.locale.t("coin.message.mix.tail", tail=face_down)
         if stand:
             output += msg.locale.t("coin.message.mix.stand", stand=stand)
         else:
             output += msg.locale.t("message.end")
         return output
-
-
-stone = module('stone', developers=['OasisAkari'], desc='{stone.help.desc}')
-
-@stone.command()
-@stone.regex(r'打水漂')
-async def _(msg: Bot.MessageSession):
-    '''
-    if msg.target.target_from != 'TEST|Console':
-        qc = CoolDown('stone', msg)
-        c = qc.check(30)
-        if c != 0:
-            await msg.finish(msg.locale.t('message.cooldown', time=int(c), cd_time='30'))
-        qc.reset()
-    '''
-    count = secrets.randbelow(11)
-    if count == 0:
-        send = msg.locale.t('stone.message.skip.nothing')
-    else:
-        send = msg.locale.t('stone.message.skip', count=count)
-
-    if count == 10:
-        if g := (g_msg := await gained_petal(msg, 1)):
-            send += '\n' + g
-    await msg.finish(send)

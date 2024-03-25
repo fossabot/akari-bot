@@ -90,11 +90,12 @@ class Music(Dict):
     charts: Optional[Chart] = None
     release_date: Optional[str] = None
     artist: Optional[str] = None
+    is_new: Optional[bool] = False
 
     diff: List[int] = []
 
     def __getattribute__(self, item):
-        if item in {'genre', 'artist', 'release_date', 'bpm', 'version'}:
+        if item in {'genre', 'artist', 'release_date', 'bpm', 'version', 'is_new'}:
             if item == 'version':
                 return self['basic_info']['from']
             return self['basic_info'][item]
@@ -112,9 +113,18 @@ class MusicList(List[Music]):
 
     def by_title(self, music_title: str) -> Optional[Music]:
         for music in self:
-            if music.title == music_title:
+            if music.title.lower() == music_title.lower():
                 return music
         return None
+
+    def new(self):
+        new_list = MusicList()
+        for music in self:
+            music = deepcopy(music)
+            if not music.is_new:
+                continue
+            new_list.append(music)
+        return new_list
 
     def random(self):
         return random.choice(self)
@@ -160,7 +170,7 @@ class TotalList:
         self.total_list = None
 
     async def get(self):
-        if self.total_list is None:
+        if not self.total_list:
             obj = await get_url('https://www.diving-fish.com/api/maimaidxprober/music_data', 200, fmt='json')
             total_list: MusicList = MusicList(obj)
             for __i in range(len(total_list)):

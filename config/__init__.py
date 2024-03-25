@@ -1,5 +1,6 @@
 import os
 from os.path import abspath
+from typing import Union, Any
 
 import toml
 
@@ -10,6 +11,7 @@ config_path = abspath('./config/' + config_filename)
 
 old_cfg_file_path = abspath('./config/config.cfg')
 
+
 def isfloat(num):
     try:
         float(num)
@@ -17,12 +19,14 @@ def isfloat(num):
     except ValueError:
         return False
 
+
 def isint(num):
     try:
         int(num)
         return True
     except ValueError:
         return False
+
 
 def convert_cfg_to_toml():
     import configparser
@@ -38,9 +42,9 @@ def convert_cfg_to_toml():
                 config_dict[x][y] = True
             elif config_dict[x][y] == "False":
                 config_dict[x][y] = False
-            elif isint(value):
+            elif isint(config_dict[x][y]):
                 config_dict[x][y] = int(config_dict[x][y])
-            elif isfloat(value):
+            elif isfloat(config_dict[x][y]):
                 config_dict[x][y] = float(config_dict[x][y])
 
     with open(config_path, 'w') as f:
@@ -63,7 +67,7 @@ class CFG:
         cls._ts = os.path.getmtime(config_path)
 
     @classmethod
-    def get(cls, q, default=None):
+    def get(cls, q: str, default: Union[Any, None] = None) -> Any:
         q = q.lower()
         if os.path.getmtime(config_path) != cls._ts:
             cls.load()

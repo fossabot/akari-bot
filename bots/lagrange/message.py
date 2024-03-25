@@ -14,7 +14,8 @@ from aiocqhttp import MessageSegment
 from bots.lagrange.client import bot
 from bots.lagrange.info import client_name
 from config import Config
-from core.builtins import Bot, base_superuser_list, command_prefix, ErrorMessage, Image, Plain, Temp, Voice
+from core.builtins import Bot, base_superuser_list, command_prefix, ErrorMessage, Image, Plain, Temp, Voice, \
+    MessageTaskManager
 from core.builtins.message import MessageSession as MessageSessionT
 from core.builtins.message.chain import MessageChain
 from core.exceptions import SendMessageFailed
@@ -86,7 +87,8 @@ class MessageSession(MessageSessionT):
         quote = False
 
     async def send_message(self, message_chain, quote=True, disable_secret_check=False,
-                           allow_split_image=True) -> FinishedSession:
+                           allow_split_image=True,
+                           callback=None) -> FinishedSession:
         msg = []
         """
         if quote and self.target.target_from == 'QQ|Group' and self.session.message:
@@ -102,7 +104,7 @@ class MessageSession(MessageSessionT):
                 msg.append({
                     "type": "text",
                     "data": {
-                        "text": x.text
+                        "text": ('\n' if count != 0 else '') + x.text
                     }
                 })
             elif isinstance(x, Image):
@@ -122,7 +124,7 @@ class MessageSession(MessageSessionT):
                     self.locale.t("error.message.timeout")))
             except aiocqhttp.exceptions.ActionFailed:
                 message_chain.insert(0, Plain(self.locale.t("error.message.limited.msg2img")))
-                msg2img = MessageSegment.image(Path(await msgchain2image(self, message_chain)).as_uri())
+                msg2img = MessageSegment.image(Path(await msgchain2image(message_chain, self)).as_uri())
                 try:
                     send = await bot.send_group_msg(group_id=int(self.session.target), message=msg2img)
                 except aiocqhttp.exceptions.ActionFailed as e:
@@ -143,6 +145,8 @@ class MessageSession(MessageSessionT):
                     return FinishedSession(self, 0, [{}])
                 else:
                     raise e
+        if callback:
+            MessageTaskManager.add_callback(send['message_id'], callback)
         return FinishedSession(self, send['message_id'], [send])
 
     async def check_native_permission(self):
@@ -214,7 +218,7 @@ class MessageSession(MessageSessionT):
         spl = re.split(r'(\[CQ:.*?])', m)
         lst = []
         for s in spl:
-            if s == '':
+            if not s:
                 continue
             if s.startswith('[CQ:'):
                 if s.startswith('[CQ:image'):
@@ -245,8 +249,9 @@ class MessageSession(MessageSessionT):
                     if datetime.datetime.now().timestamp() - last_send_typing_time[self.msg.session.sender] <= 3600:
                         return
                 last_send_typing_time[self.msg.session.sender] = datetime.datetime.now().timestamp()
+                action = 'touch' if Config('use_shamrock') else 'poke'
                 await bot.send_group_msg(group_id=self.msg.session.target,
-                                         message=f'[CQ:poke,qq={self.msg.session.sender}]')"""
+                                         message=f'[CQ:{action},qq={self.msg.session.sender}]')"""
 
         async def __aexit__(self, exc_type, exc_val, exc_tb):
             pass
@@ -350,7 +355,7 @@ class FetchTarget(FetchTargetT):
             except Exception:
                 Logger.error(traceback.format_exc())
 
-        if user_list is not None:
+        if user_list:
             for x in user_list:
                 await post_(x)
         else:

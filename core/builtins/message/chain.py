@@ -5,22 +5,22 @@ from urllib.parse import urlparse
 
 import ujson as json
 
-from core.builtins.message.internal import Plain, Image, Voice, Embed, Url, ErrorMessage, FormattedTime
+from core.builtins.message.internal import Plain, Image, Voice, Embed, Url, ErrorMessage, FormattedTime, I18NContext
 from core.builtins.utils import Secret
 from core.logger import Logger
 from core.types.message import MessageChain as MessageChainT, MessageSession
 
 
 class MessageChain(MessageChainT):
-    def __init__(self, elements: Union[str, List[Union[Plain, Image, Voice, Embed, Url, FormattedTime]],
-                                       Tuple[Union[Plain, Image, Voice, Embed, Url, FormattedTime]],
-                                       Plain, Image, Voice, Embed, Url, FormattedTime] = None):
+    def __init__(self, elements: Union[str, List[Union[Plain, Image, Voice, Embed, Url, FormattedTime, I18NContext]],
+                                       Tuple[Union[Plain, Image, Voice, Embed, Url, FormattedTime, I18NContext]],
+                                       Plain, Image, Voice, Embed, Url, FormattedTime, I18NContext] = None):
         self.value = []
         if isinstance(elements, ErrorMessage):
             elements = str(elements)
         if isinstance(elements, str):
             elements = Plain(elements)
-        if isinstance(elements, (Plain, Image, Voice, Embed, Url, FormattedTime)):
+        if isinstance(elements, (Plain, Image, Voice, Embed, Url, FormattedTime, I18NContext)):
             if isinstance(elements, Plain):
                 if elements.text != '':
                     elements = match_kecode(elements.text)
@@ -32,7 +32,7 @@ class MessageChain(MessageChainT):
                     self.value.append(Plain(str(e)))
                 elif isinstance(e, Url):
                     self.value.append(Plain(e.url))
-                elif isinstance(e, (Plain, Image, Voice, Embed, FormattedTime)):
+                elif isinstance(e, (Plain, Image, Voice, Embed, FormattedTime, I18NContext)):
                     if isinstance(e, Plain):
                         if e.text != '':
                             self.value += match_kecode(e.text)
@@ -49,8 +49,17 @@ class MessageChain(MessageChainT):
                         self.value.append(
                             Embed(e['data']['title'], e['data']['description'], e['data']['url'],
                                   e['data']['timestamp'],
-                                  e['data']['color'], Image(e['data']['image']), Image(e['data']['thumbnail']),
+                                  e['data']['color'],
+                                  Image(e['data']['image']) if e['data']['image'] else None,
+                                  Image(e['data']['thumbnail']) if e['data']['thumbnail'] else None,
                                   e['data']['author'], e['data']['footer'], e['data']['fields']))
+                    elif e['type'] == 'url':
+                        self.value.append(Url(e['data']['url']))
+                    elif e['type'] == 'formatted_time':
+                        self.value.append(FormattedTime(e['data']['timestamp'], e['data']['date'], e['data']['iso'],
+                                                        e['data']['time'], e['data']['seconds'], e['data']['timezone']))
+                    elif e['type'] == 'i18n':
+                        self.value.append(I18NContext(e['data']['key'], **e['data']['kwargs']))
                 elif isinstance(e, str):
                     if e != '':
                         self.value += match_kecode(e)
@@ -58,7 +67,7 @@ class MessageChain(MessageChainT):
                     Logger.error(f'Unexpected message type: {elements}')
         elif isinstance(elements, MessageChain):
             self.value = elements.value
-        elif elements is None:
+        elif not elements:
             pass
         else:
             Logger.error(f'Unexpected message type: {elements}')
@@ -80,23 +89,23 @@ class MessageChain(MessageChainT):
                 for secret in Secret.list:
                     if secret in ["", None, True, False]:
                         continue
-                    if v.title is not None:
+                    if v.title:
                         if v.title.upper().find(secret.upper()) != -1:
                             Logger.warn(unsafeprompt('Embed.title', secret, v.title))
                             return False
-                    if v.description is not None:
+                    if v.description:
                         if v.description.upper().find(secret.upper()) != -1:
                             Logger.warn(unsafeprompt('Embed.description', secret, v.description))
                             return False
-                    if v.footer is not None:
+                    if v.footer:
                         if v.footer.upper().find(secret.upper()) != -1:
                             Logger.warn(unsafeprompt('Embed.footer', secret, v.footer))
                             return False
-                    if v.author is not None:
+                    if v.author:
                         if v.author.upper().find(secret.upper()) != -1:
                             Logger.warn(unsafeprompt('Embed.author', secret, v.author))
                             return False
-                    if v.url is not None:
+                    if v.url:
                         if v.url.upper().find(secret.upper()) != -1:
                             Logger.warn(unsafeprompt('Embed.url', secret, v.url))
                             return False
@@ -116,7 +125,7 @@ class MessageChain(MessageChainT):
         value = []
         for x in self.value:
             if isinstance(x, Embed) and not embed:
-                value += x.to_message_chain()
+                value += x.to_message_chain(msg)
             elif isinstance(x, Plain):
                 if x.text != '':
                     value.append(x)
@@ -124,6 +133,12 @@ class MessageChain(MessageChainT):
                     value.append(Plain(ErrorMessage('{error.message.chain.plain.empty}', locale=locale)))
             elif isinstance(x, FormattedTime):
                 value.append(Plain(x.to_str(msg=msg)))
+            elif isinstance(x, I18NContext):
+                t_value = msg.locale.t(x.key, **x.kwargs)
+                if isinstance(t_value, str):
+                    value.append(Plain(t_value))
+                else:
+                    value += MessageChain(t_value).as_sendable(msg)
             else:
                 value.append(x)
         if not value:
@@ -134,7 +149,7 @@ class MessageChain(MessageChainT):
         value = []
         for x in self.value:
             if isinstance(x, Embed) and not embed:
-                value += x.to_message_chain().to_list()
+                value += x.to_message_chain(msg).to_list()
             elif isinstance(x, Plain):
                 if x.text != '':
                     value.append(x.to_dict())
@@ -171,7 +186,7 @@ site_whitelist = ['http.cat']
 def match_kecode(text: str) -> List[Union[Plain, Image, Voice, Embed]]:
     split_all = re.split(r'(\[Ke:.*?])', text)
     for x in split_all:
-        if x == '':
+        if not x:
             split_all.remove('')
     elements = []
     for e in split_all:
@@ -183,7 +198,7 @@ def match_kecode(text: str) -> List[Union[Plain, Image, Voice, Embed]]:
             element_type = match.group(1).lower()
             args = re.split(r',|,.\s', match.group(2))
             for x in args:
-                if x == '':
+                if not x:
                     args.remove('')
             if element_type == 'plain':
                 for a in args:
@@ -206,7 +221,7 @@ def match_kecode(text: str) -> List[Union[Plain, Image, Voice, Embed]]:
                                 img = Image(path=ma.group(2))
                         if ma.group(1) == 'headers':
                             img.headers = json.loads(str(base64.b64decode(ma.group(2)), "UTF-8"))
-                        if img is not None:
+                        if img:
                             elements.append(img)
                     else:
                         elements.append(Image(a))

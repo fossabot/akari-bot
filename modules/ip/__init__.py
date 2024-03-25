@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 from core.builtins import Bot
 from core.component import module
+from core.logger import Logger
 from core.utils.http import get_url
 
 ip = module('ip', developers=['Dianliang233'])
@@ -15,9 +16,9 @@ async def _(msg: Bot.MessageSession, ip_address: str):
     try:
         ipaddress.ip_address(ip_address)
     except BaseException:
-        await msg.finish(msg.locale.t('ip.message.error.unknown'))
+        await msg.finish(msg.locale.t('ip.message.invalid'))
     res = await check_ip(ip_address)
-    await msg.finish(await format_ip(msg, res))
+    await msg.finish(await format_ip(msg, res), disable_secret_check=True)
 
 
 async def check_ip(ip: str):
@@ -82,11 +83,16 @@ async def check_ip(ip: str):
     }
     if not skip_geoip:
         data = json.loads(await get_url('https://api.ip.sb/geoip/' + ip))
-        reverse = socket.getnameinfo((ip, 0), 0)
-        res['reverse'] = reverse[0]
         for key in res:
             if key in data:
                 res[key] = data[key]
+
+        try:
+            reverse = socket.getnameinfo((ip, 0), 0)
+            res['reverse'] = reverse[0]
+        except BaseException:
+            Logger.warn("Unable to fetch reverse DNS.")
+
     return res
 
 
@@ -116,10 +122,10 @@ async def format_ip(msg, info: Dict[str, Any]):
     return f'''\
 {info['ip']}
 {msg.locale.t('ip.message.type')}IPv{info['version']} {ip_property[info['ip_property']]}{msg.locale.t('ip.message.ip_property')}{f"""
-{msg.locale.t('ip.message.real_ip')}{info['real_ip']}""" if info['real_ip'] is not None else ''}{f"""
-{msg.locale.t('ip.message.location')}{f"{info['city']}, " if info['city'] is not None else ''}{f"{info['region']}, " if info['region'] is not None else ''}{info['country']}""" if info['country'] is not None else ''}{f" ({parse_coordinate('longitude', info['longitude'])}, {parse_coordinate('latitude', info['latitude'])})" if info['longitude'] is not None and info['latitude'] is not None else ''}{f"""
-{msg.locale.t('ip.message.postal_code')}{info['postal_code']}""" if info['postal_code'] is not None else ''}{f"""
-{msg.locale.t('ip.message.organization')}{info['organization']}""" if info['organization'] is not None else ''}{f"""
-{msg.locale.t('ip.message.asn')}{info['asn']}""" if info['asn'] is not None else ''}{f" ({info['asn_organization']}) " if info['asn_organization'] is not None else ''}{f"""
-{msg.locale.t('ip.message.utc')}UTC{(info['offset'] / 3600):+g}""" if info['offset'] is not None else ''}{f"""
-{msg.locale.t('ip.message.reverse')}{info['reverse']}""" if info['reverse'] is not None and info['reverse'] != info['ip'] else ''}'''
+{msg.locale.t('ip.message.real_ip')}{info['real_ip']}""" if info['real_ip'] else ''}{f"""
+{msg.locale.t('ip.message.location')}{f"{info['city']}, " if info['city'] else ''}{f"{info['region']}, " if info['region']  else ''}{info['country']}""" if info['country'] else ''}{f" ({parse_coordinate('longitude', info['longitude'])}, {parse_coordinate('latitude', info['latitude'])})" if info['longitude'] and info['latitude'] else ''}{f"""
+{msg.locale.t('ip.message.postal_code')}{info['postal_code']}""" if info['postal_code'] else ''}{f"""
+{msg.locale.t('ip.message.organization')}{info['organization']}""" if info['organization'] else ''}{f"""
+{msg.locale.t('ip.message.asn')}{info['asn']}""" if info['asn'] else ''}{f" ({info['asn_organization']}) " if info['asn_organization'] else ''}{f"""
+{msg.locale.t('ip.message.utc')}UTC{(info['offset'] / 3600):+g}""" if info['offset'] else ''}{f"""
+{msg.locale.t('ip.message.reverse')}{info['reverse']}""" if info['reverse'] and info['reverse'] != info['ip'] else ''}'''

@@ -1,23 +1,20 @@
-import asyncio
 import os
 import re
 import shutil
 import sys
 from datetime import datetime, timedelta
 
-import matplotlib.pyplot as plt
-import numpy as np
+
 import ujson as json
-from dateutil.relativedelta import relativedelta
+
 
 from config import Config, CFG
 from core.builtins import Bot, PrivateAssets, Image, Plain, ExecutionLockList, Temp, MessageTaskManager
 from core.component import module
-from core.exceptions import TestException
+from core.exceptions import NoReportException, TestException
 from core.loader import ModulesManager
-from core.logger import logger
-from core.parser.message import remove_temp_ban
-from core.scheduler import CronTrigger
+from core.logger import Logger
+from core.parser.message import check_temp_ban, remove_temp_ban
 from core.tos import pardon_user, warn_user
 from core.utils.cache import random_cache_path
 from core.utils.info import Info
@@ -28,125 +25,26 @@ from database import BotDBUtil
 su = module('superuser', alias='su', required_superuser=True, base=True)
 
 
-@su.command('add <UserID>')
-async def add_su(msg: Bot.MessageSession):
-    user = msg.parsed_msg['<UserID>']
+@su.command('add <user>')
+async def add_su(msg: Bot.MessageSession, user: str):
     if not user.startswith(f'{msg.target.sender_from}|'):
-        await msg.finish(msg.locale.t("core.message.superuser.invalid", target=msg.target.sender_from))
+        await msg.finish(msg.locale.t("message.id.invalid.sender", sender=msg.target.sender_from))
     if user:
         if BotDBUtil.SenderInfo(user).edit('isSuperUser', True):
             await msg.finish(msg.locale.t("success"))
 
 
-@su.command('remove <UserID>')
-async def del_su(msg: Bot.MessageSession):
-    user = msg.parsed_msg['<UserID>']
+@su.command('remove <user>')
+async def del_su(msg: Bot.MessageSession, user: str):
     if not user.startswith(f'{msg.target.sender_from}|'):
-        await msg.finish(msg.locale.t("core.message.superuser.invalid", target=msg.target.sender_from))
+        await msg.finish(msg.locale.t("message.id.invalid.sender", sender=msg.target.sender_from))
     if user == msg.target.sender_id:
-        confirm = await msg.wait_confirm(msg.locale.t("core.message.confirm"), append_instruction=False)
+        confirm = await msg.wait_confirm(msg.locale.t("core.message.admin.remove.confirm"), append_instruction=False)
         if not confirm:
-            return
+            await msg.finish()
     if user:
         if BotDBUtil.SenderInfo(user).edit('isSuperUser', False):
             await msg.finish(msg.locale.t("success"))
-
-
-ana = module('analytics', required_superuser=True, base=True)
-
-
-@ana.command()
-async def _(msg: Bot.MessageSession):
-    if Config('enable_analytics'):
-        first_record = BotDBUtil.Analytics.get_first()
-        get_counts = BotDBUtil.Analytics.get_count()
-
-        new = datetime.now().replace(hour=0, minute=0, second=0) + timedelta(days=1)
-        old = datetime.now().replace(hour=0, minute=0, second=0)
-        get_counts_today = BotDBUtil.Analytics.get_count_by_times(new, old)
-
-        await msg.finish(msg.locale.t("core.message.analytics.counts", first_record=first_record.timestamp,
-                                      counts=get_counts, counts_today=get_counts_today))
-    else:
-        await msg.finish(msg.locale.t("core.message.analytics.disabled"))
-
-
-@ana.command('days [<name>]')
-async def _(msg: Bot.MessageSession):
-    if Config('enable_analytics'):
-        first_record = BotDBUtil.Analytics.get_first()
-        module_ = None
-        if '<name>' in msg.parsed_msg:
-            module_ = msg.parsed_msg['<name>']
-        if module_ is None:
-            result = msg.locale.t("core.message.analytics.days.total", first_record=first_record.timestamp)
-        else:
-            result = msg.locale.t("core.message.analytics.days", module=module_,
-                                  first_record=first_record.timestamp)
-        data_ = {}
-        for d in range(30):
-            new = datetime.now().replace(hour=0, minute=0, second=0) + timedelta(days=1) - timedelta(days=30 - d - 1)
-            old = datetime.now().replace(hour=0, minute=0, second=0) + timedelta(days=1) - timedelta(days=30 - d)
-            get_ = BotDBUtil.Analytics.get_count_by_times(new, old, module_)
-            data_[old.day] = get_
-        data_x = []
-        data_y = []
-        for x in data_:
-            data_x.append(str(x))
-            data_y.append(data_[x])
-        plt.plot(data_x, data_y, "-o")
-        plt.plot(data_x[-1], data_y[-1], "-ro")
-        plt.xlabel('Days')
-        plt.ylabel('Counts')
-        plt.tick_params(axis='x', labelrotation=45, which='major', labelsize=10)
-
-        plt.gca().yaxis.get_major_locator().set_params(integer=True)
-        for xitem, yitem in np.nditer([data_x, data_y]):
-            plt.annotate(yitem, (xitem, yitem), textcoords="offset points", xytext=(0, 10), ha="center")
-        path = random_cache_path() + '.png'
-        plt.savefig(path)
-        plt.close()
-        await msg.finish([Plain(result), Image(path)])
-
-
-@ana.command('year [<name>]')
-async def _(msg: Bot.MessageSession):
-    if Config('enable_analytics'):
-        first_record = BotDBUtil.Analytics.get_first()
-        module_ = None
-        if '<name>' in msg.parsed_msg:
-            module_ = msg.parsed_msg['<name>']
-        if module_ is None:
-            result = msg.locale.t("core.message.analytics.year.total", first_record=first_record.timestamp)
-        else:
-            result = msg.locale.t("core.message.analytics.year", module=module_,
-                                  first_record=first_record.timestamp)
-        data_ = {}
-        for d in range(12):
-            new = datetime.now().replace(month=1, day=1, hour=0, minute=0, second=0) + \
-                relativedelta(years=1) - relativedelta(months=12 - d - 1)
-            old = datetime.now().replace(month=1, day=1, hour=0, minute=0, second=0) + \
-                relativedelta(years=1) - relativedelta(months=12 - d)
-            get_ = BotDBUtil.Analytics.get_count_by_times(new, old, module_)
-            data_[old.month] = get_
-        data_x = []
-        data_y = []
-        for x in data_:
-            data_x.append(str(x))
-            data_y.append(data_[x])
-        plt.plot(data_x, data_y, "-o")
-        plt.plot(data_x[-1], data_y[-1], "-ro")
-        plt.xlabel('Months')
-        plt.ylabel('Counts')
-        plt.tick_params(axis='x', labelrotation=45, which='major', labelsize=10)
-
-        plt.gca().yaxis.get_major_locator().set_params(integer=True)
-        for xitem, yitem in np.nditer([data_x, data_y]):
-            plt.annotate(yitem, (xitem, yitem), textcoords="offset points", xytext=(0, 10), ha="center")
-        path = random_cache_path() + '.png'
-        plt.savefig(path)
-        plt.close()
-        await msg.finish([Plain(result), Image(path)])
 
 
 purge = module('purge', required_superuser=True, base=True)
@@ -167,129 +65,179 @@ async def _(msg: Bot.MessageSession):
         await msg.finish(msg.locale.t("core.message.purge.empty"))
 
 
-@purge.schedule(CronTrigger.from_crontab('0 0 * * *'))
-async def _():
-    cache_path = os.path.abspath(Config('cache_path'))
-    Logger.info('Start purging cache...')
-    if os.path.exists(cache_path):
-        shutil.rmtree(cache_path)
-    os.mkdir(cache_path)
-
-
 set_ = module('set', required_superuser=True, base=True)
 
 
-@set_.command('modules <target_id> <modules> ...')
-async def _(msg: Bot.MessageSession):
-    target = msg.parsed_msg['<target_id>']
+@set_.command('module enable <target> <modules> ...',
+              'module disable <target> <modules> ...')
+async def _(msg: Bot.MessageSession, target: str):
     if not target.startswith(f'{msg.target.target_from}|'):
-        await msg.finish(msg.locale.t("core.message.set.invalid"))
+        await msg.finish(msg.locale.t("message.id.invalid.target", target=msg.target.target_from))
     target_data = BotDBUtil.TargetInfo(target)
-    if target_data.query is None:
+    if not target_data.query:
         confirm = await msg.wait_confirm(msg.locale.t("core.message.set.confirm.init"), append_instruction=False)
         if not confirm:
-            return
+            await msg.finish()
     modules = [m for m in [msg.parsed_msg['<modules>']] + msg.parsed_msg.get('...', [])
                if m in ModulesManager.return_modules_list(msg.target.target_from)]
-    target_data.enable(modules)
-    await msg.finish(msg.locale.t("core.message.set.module.success") + ", ".join(modules))
+    if 'enable' in msg.parsed_msg:
+        target_data.enable(modules)
+        await msg.finish(msg.locale.t("core.message.set.module.enable.success") + ", ".join(modules))
+    if 'disable' in msg.parsed_msg:
+        target_data.disable(modules)
+        await msg.finish(msg.locale.t("core.message.set.module.disable.success") + ", ".join(modules))
 
 
-@set_.command('option <target_id> <k> <v>')
-async def _(msg: Bot.MessageSession):
-    target = msg.parsed_msg['<target_id>']
-    k = msg.parsed_msg['<k>']
-    v = msg.parsed_msg['<v>']
+@set_.command('option get <target> [<k>]',
+              'option edit <target> <k> <v>',
+              'option remove <target> <k>')
+async def _(msg: Bot.MessageSession, target: str):
     if not target.startswith(f'{msg.target.target_from}|'):
-        await msg.finish(msg.locale.t("core.message.set.invalid"))
+        await msg.finish(msg.locale.t("message.id.invalid.target", target=msg.target.target_from))
     target_data = BotDBUtil.TargetInfo(target)
-    if target_data.query is None:
+    if not target_data.query:
         confirm = await msg.wait_confirm(msg.locale.t("core.message.set.confirm.init"), append_instruction=False)
         if not confirm:
-            return
-    if v.startswith(('[', '{')):
-        v = json.loads(v)
-    elif v.upper() == 'TRUE':
-        v = True
-    elif v.upper() == 'FALSE':
-        v = False
-    target_data.edit_option(k, v)
-    await msg.finish(msg.locale.t("core.message.set.help.option.success", k=k, v=v))
+            await msg.finish()
+    if 'get' in msg.parsed_msg:
+        k = msg.parsed_msg.get('<k>', None)
+        await msg.finish(str(target_data.get_option(k)))
+    elif 'edit' in msg.parsed_msg:
+        k = msg.parsed_msg.get('<k>')
+        v = msg.parsed_msg.get('<v>')
+        if v.startswith(('[', '{')):
+            v = json.loads(v)
+        elif v.upper() == 'TRUE':
+            v = True
+        elif v.upper() == 'FALSE':
+            v = False
+        target_data.edit_option(k, v)
+        await msg.finish(msg.locale.t("core.message.set.option.edit.success", key=k, value=v))
+    elif 'remove' in msg.parsed_msg:
+        k = msg.parsed_msg.get('<k>')
+        target_data.remove_option(k)
+        await msg.finish(msg.locale.t("success"))
+
+
+if Bot.client_name == 'QQ':
+    post_whitelist = module('post_whitelist', required_superuser=True, base=True)
+
+    @post_whitelist.command('<group_id>')
+    async def _(msg: Bot.MessageSession, group_id: str):
+        target_data = BotDBUtil.TargetInfo(group_id)
+        k = 'in_post_whitelist'
+        v = not target_data.options.get(k, False)
+        target_data.edit_option(k, v)
+        await msg.finish(msg.locale.t("core.message.set.option.edit.success", key=k, value=v))
 
 
 ae = module('abuse', alias='ae', required_superuser=True, base=True)
 
 
 @ae.command('check <user>')
-async def _(msg: Bot.MessageSession):
-    user = msg.parsed_msg['<user>']
+async def _(msg: Bot.MessageSession, user: str):
+    stat = ''
     if not user.startswith(f'{msg.target.sender_from}|'):
-        await msg.finish(msg.locale.t("core.message.set.invalid"))
+        await msg.finish(msg.locale.t("message.id.invalid.sender", sender=msg.target.sender_from))
     warns = BotDBUtil.SenderInfo(user).query.warns
-    await msg.finish(msg.locale.t("core.message.abuse.check.warns", user=user, warns=warns))
+    temp_banned_time = await check_temp_ban(user)
+    is_banned = BotDBUtil.SenderInfo(user).query.isInBlockList
+    if temp_banned_time:
+        stat += '\n' + msg.locale.t("core.message.abuse.check.tempbanned", ban_time=temp_banned_time)
+    if is_banned:
+        stat += '\n' + msg.locale.t("core.message.abuse.check.banned")
+    await msg.finish(msg.locale.t("core.message.abuse.check.warns", user=user, warns=warns) + stat)
 
 
 @ae.command('warn <user> [<count>]')
-async def _(msg: Bot.MessageSession):
-    count = int(msg.parsed_msg.get('<count>', 1))
-    user = msg.parsed_msg['<user>']
+async def _(msg: Bot.MessageSession, user: str, count: int = 1):
     if not user.startswith(f'{msg.target.sender_from}|'):
-        await msg.finish(msg.locale.t("core.message.set.invalid"))
+        await msg.finish(msg.locale.t("message.id.invalid.sender", sender=msg.target.sender_from))
     warn_count = await warn_user(user, count)
-    await msg.finish(msg.locale.t("core.message.abuse.warn.success", user=user, counts=count, warn_counts=warn_count))
+    await msg.finish(msg.locale.t("core.message.abuse.warn.success", user=user, count=count, warn_count=warn_count))
 
 
 @ae.command('revoke <user> [<count>]')
-async def _(msg: Bot.MessageSession):
-    count = 0 - int(msg.parsed_msg.get('<count>', 1))
-    user = msg.parsed_msg['<user>']
+async def _(msg: Bot.MessageSession, user: str, count: int = 1):
     if not user.startswith(f'{msg.target.sender_from}|'):
-        await msg.finish(msg.locale.t("core.message.set.invalid"))
-    warn_count = await warn_user(user, count)
-    await msg.finish(msg.locale.t("core.message.abuse.revoke.success", user=user, counts=count, warn_counts=warn_count))
+        await msg.finish(msg.locale.t("message.id.invalid.sender", sender=msg.target.sender_from))
+    warn_count = await warn_user(user, -count)
+    await msg.finish(msg.locale.t("core.message.abuse.revoke.success", user=user, count=count, warn_count=warn_count))
 
 
 @ae.command('clear <user>')
-async def _(msg: Bot.MessageSession):
-    user = msg.parsed_msg['<user>']
+async def _(msg: Bot.MessageSession, user: str):
     if not user.startswith(f'{msg.target.sender_from}|'):
-        await msg.finish(msg.locale.t("core.message.set.invalid"))
+        await msg.finish(msg.locale.t("message.id.invalid.sender", sender=msg.target.sender_from))
     await pardon_user(user)
     await msg.finish(msg.locale.t("core.message.abuse.clear.success", user=user))
 
 
 @ae.command('untempban <user>')
-async def _(msg: Bot.MessageSession):
-    user = msg.parsed_msg['<user>']
+async def _(msg: Bot.MessageSession, user: str):
     if not user.startswith(f'{msg.target.sender_from}|'):
-        await msg.finish(msg.locale.t("core.message.set.invalid"))
+        await msg.finish(msg.locale.t("message.id.invalid.sender", sender=msg.target.sender_from))
     await remove_temp_ban(user)
     await msg.finish(msg.locale.t("core.message.abuse.untempban.success", user=user))
 
 
 @ae.command('ban <user>')
-async def _(msg: Bot.MessageSession):
-    user = msg.parsed_msg['<user>']
+async def _(msg: Bot.MessageSession, user: str):
     if not user.startswith(f'{msg.target.sender_from}|'):
-        await msg.finish(msg.locale.t("core.message.set.invalid"))
+        await msg.finish(msg.locale.t("message.id.invalid.sender", sender=msg.target.sender_from))
     if BotDBUtil.SenderInfo(user).edit('isInBlockList', True):
         await msg.finish(msg.locale.t("core.message.abuse.ban.success", user=user))
 
 
 @ae.command('unban <user>')
-async def _(msg: Bot.MessageSession):
-    user = msg.parsed_msg['<user>']
+async def _(msg: Bot.MessageSession, user: str):
     if not user.startswith(f'{msg.target.sender_from}|'):
-        await msg.finish(msg.locale.t("core.message.set.invalid"))
+        await msg.finish(msg.locale.t("message.id.invalid.sender", sender=msg.target.sender_from))
     if BotDBUtil.SenderInfo(user).edit('isInBlockList', False):
         await msg.finish(msg.locale.t("core.message.abuse.unban.success", user=user))
+
+
+@ae.command('block <target>', available_for='QQ|Group')
+async def _(msg: Bot.MessageSession, target: str):
+    if not target.startswith(f'{msg.target.target_from}|'):
+        await msg.finish(msg.locale.t("message.id.invalid.target", target=msg.target.target_from))
+    if target == msg.target.target_id:
+        await msg.finish(msg.locale.t("core.message.abuse.block.self"))
+    if BotDBUtil.GroupBlockList.add(target):
+        await msg.finish(msg.locale.t("core.message.abuse.block.success", target=target))
+
+
+@ae.command('unblock <target>', available_for='QQ|Group')
+async def _(msg: Bot.MessageSession, target: str):
+    if not target.startswith(f'{msg.target.target_from}|'):
+        await msg.finish(msg.locale.t("message.id.invalid.target", target=msg.target.target_from))
+    if BotDBUtil.GroupBlockList.remove(target):
+        await msg.finish(msg.locale.t("core.message.abuse.unblock.success", target=target))
+
+
+res = module('reset', required_superuser=True, base=True)
+
+@res.command()
+async def reset(msg: Bot.MessageSession):
+    confirm = await msg.wait_confirm(msg.locale.t("core.message.confirm"), append_instruction=False)
+    if confirm:
+        pull_repo_result = os.popen('git reset --hard origin/master', 'r').read()[:-1]
+        if pull_repo_result != '':
+            await msg.finish(pull_repo_result)
+        else:
+            await msg.finish(msg.locale.t("core.message.update.failed"))
+    else:
+        await msg.finish()
 
 
 upd = module('update', required_superuser=True, base=True)
 
 
 def pull_repo():
-    return os.popen('git pull', 'r').read()[:-1]
+    pull_repo_result = os.popen('git pull', 'r').read()[:-1]
+    if pull_repo_result == '':
+        return False
+    return pull_repo_result
 
 
 def update_dependencies():
@@ -299,7 +247,7 @@ def update_dependencies():
     pip_install = os.popen('pip install -r requirements.txt').read()[:-1]
     if len(pip_install) > 500:
         return '...' + pip_install[-500:]
-    return
+    return pip_install
 
 
 @upd.command()
@@ -307,11 +255,13 @@ async def update_bot(msg: Bot.MessageSession):
     confirm = await msg.wait_confirm(msg.locale.t("core.message.confirm"), append_instruction=False)
     if confirm:
         pull_repo_result = pull_repo()
-        if pull_repo_result != '':
+        if pull_repo_result:
             await msg.send_message(pull_repo_result)
         else:
             await msg.send_message(msg.locale.t("core.message.update.failed"))
-        await msg.send_message(update_dependencies())
+        await msg.finish(update_dependencies())
+    else:
+        await msg.finish()
 
 if Info.subprocess:
     rst = module('restart', required_superuser=True, base=True)
@@ -332,7 +282,7 @@ if Info.subprocess:
         if datetime.now().timestamp() - restart_time[0] < 60:
             if len(get) != 0:
                 await msg.send_message(msg.locale.t("core.message.restart.wait", count=len(get)))
-                await asyncio.sleep(10)
+                await msg.sleep(10)
                 return await wait_for_restart(msg)
             else:
                 await msg.send_message(msg.locale.t("core.message.restart.restarting"))
@@ -354,9 +304,9 @@ if Info.subprocess:
             await wait_for_restart(msg)
             write_version_cache(msg)
             restart()
+        else:
+            await msg.finish()
 
-
-if Info.subprocess:
     upds = module('update&restart', required_superuser=True, alias='u&r', base=True)
 
     @upds.command()
@@ -374,10 +324,22 @@ if Info.subprocess:
                 Logger.warn(f'Failed to get Git repository result.')
                 await msg.send_message(msg.locale.t("core.message.update.failed"))
             restart()
+        else:
+            await msg.finish()
+
+
+exit_ = module('exit', required_superuser=True, base=True, available_for=['TEST|Console'])
+
+@exit_.command()
+async def _(msg: Bot.MessageSession):
+    confirm = await msg.wait_confirm(msg.locale.t("core.message.confirm"), append_instruction=False, delete=False)
+    if confirm:
+        print('Exited.')
+        sys.exit()
 
 
 if Bot.FetchTarget.name == 'QQ':
-    resume = module('resume', required_base_superuser=True)
+    resume = module('resume', required_superuser=True)
 
     @resume.command()
     async def resume_sending_group_message(msg: Bot.MessageSession):
@@ -390,7 +352,7 @@ if Bot.FetchTarget.name == 'QQ':
                 else:
                     await x['fetch'].send_direct_message(x['message'])
                 Temp.data['waiting_for_send_group_message'].remove(x)
-                await asyncio.sleep(30)
+                await msg.sleep(30)
             await msg.finish(msg.locale.t("core.message.resume.done"))
         else:
             await msg.finish(msg.locale.t("core.message.resume.nothing"))
@@ -410,7 +372,7 @@ if Bot.FetchTarget.name == 'QQ':
                 else:
                     await x['fetch'].send_direct_message(x['message'])
                 Temp.data['waiting_for_send_group_message'].remove(x)
-                await asyncio.sleep(30)
+                await msg.sleep(30)
             await msg.finish(msg.locale.t("core.message.resume.done"))
         else:
             await msg.finish(msg.locale.t("core.message.resume.nothing"))
@@ -440,16 +402,16 @@ echo = module('echo', required_superuser=True, base=True)
 
 
 @echo.command('<display_msg>')
-async def _(msg: Bot.MessageSession):
-    await msg.finish(msg.parsed_msg['<display_msg>'])
+async def _(msg: Bot.MessageSession, display_msg: str):
+    await msg.finish(display_msg)
 
 
 say = module('say', required_superuser=True, base=True)
 
 
 @say.command('<display_msg>')
-async def _(msg: Bot.MessageSession):
-    await msg.finish(msg.parsed_msg['<display_msg>'], quote=False)
+async def _(msg: Bot.MessageSession, display_msg: str):
+    await msg.finish(display_msg, quote=False)
 
 
 rse = module('raise', required_superuser=True, base=True)
@@ -465,11 +427,14 @@ if Config('enable_eval'):
     _eval = module('eval', required_superuser=True, base=True)
 
     @_eval.command('<display_msg>')
-    async def _(msg: Bot.MessageSession):
-        await msg.finish(str(eval(msg.parsed_msg['<display_msg>'], {'msg': msg})))
+    async def _(msg: Bot.MessageSession, display_msg: str):
+        try:
+            await msg.finish(str(eval(display_msg, {'msg': msg})))
+        except Exception as e:
+            raise NoReportException(e)
 
 
-_config = module('config', required_superuser=True, alias='cfg', base=True)
+cfg_ = module('config', required_superuser=True, alias='cfg', base=True)
 
 
 def isfloat(num):
@@ -488,36 +453,40 @@ def isint(num):
         return False
 
 
-@_config.command('write <k> <v> [-s]')
-async def _(msg: Bot.MessageSession):
-    value = msg.parsed_msg['<v>']
-    if value.lower() == 'true':
-        value = True
-    elif value.lower() == 'false':
-        value = False
-    elif isint(value):
-        value = int(value)
-    elif isfloat(value):
-        value = float(value)
-    elif re.match(r'^\[.*\]$', value):
+@cfg_.command('get <k>')
+async def _(msg: Bot.MessageSession, k: str):
+    await msg.finish(str(Config(k)))
+
+
+@cfg_.command('write <k> <v> [-s]')
+async def _(msg: Bot.MessageSession, k: str, v: str):
+    if v.lower() == 'true':
+        v = True
+    elif v.lower() == 'false':
+        v = False
+    elif isint(v):
+        v = int(v)
+    elif isfloat(v):
+        v = float(v)
+    elif re.match(r'^\[.*\]$', v):
         try:
-            value = json.loads(value)
+            v = json.loads(v)
         except BaseException:
             await msg.finish(msg.locale.t("core.message.config.write.failed"))
 
-    CFG.write(msg.parsed_msg['<k>'], value, msg.parsed_msg['-s'])
+    CFG.write(k, v, msg.parsed_msg['-s'])
     await msg.finish(msg.locale.t("success"))
 
 
-@_config.command('delete <k>')
-async def _(msg: Bot.MessageSession):
-    if CFG.delete(msg.parsed_msg['<k>']):
+@cfg_.command('delete <k>')
+async def _(msg: Bot.MessageSession, k: str):
+    if CFG.delete(k):
         await msg.finish(msg.locale.t("success"))
     else:
         await msg.finish(msg.locale.t("failed"))
 
 
-if Config('openai_api_key'):
+if Config('enable_petal'):
     petal = module('petal', base=True, alias='petals')
 
     @petal.command()
@@ -528,37 +497,36 @@ if Config('openai_api_key'):
     async def _(msg: Bot.MessageSession):
         group = msg.parsed_msg['<target>']
         target = BotDBUtil.TargetInfo(group)
-        await msg.finish(msg.locale.t('core.message.petal', group=group, petal=target.petal))
+        await msg.finish(msg.locale.t('core.message.petal', target=group, petal=target.petal))
 
     @petal.command('modify <petal> [<target>]', required_superuser=True)
-    async def _(msg: Bot.MessageSession):
-        petal = msg.parsed_msg['<petal>']
+    async def _(msg: Bot.MessageSession, petal: str):
         if '<target>' in msg.parsed_msg:
             group = msg.parsed_msg['<target>']
             target = BotDBUtil.TargetInfo(group)
             target.modify_petal(int(petal))
             await msg.finish(
-                msg.locale.t('core.message.petal.modify', group=group, add_petal=petal, petal=target.petal))
+                msg.locale.t('core.message.petal.modify', target=group, add_petal=petal, petal=target.petal))
         else:
             target = msg.data
             target.modify_petal(int(petal))
             await msg.finish(msg.locale.t('core.message.petal.modify.self', add_petal=petal, petal=target.petal))
 
-if Bot.client_name == 'QQ':
-    post_whitelist = module('post_whitelist', required_superuser=True, base=True)
-
-    @post_whitelist.command('<group_id>')
+    @petal.command('clear [<target>]', required_superuser=True)
     async def _(msg: Bot.MessageSession):
-        target_data = BotDBUtil.TargetInfo(msg.parsed_msg['<group_id>'])
-        k = 'in_post_whitelist'
-        v = not target_data.options.get(k, False)
-        target_data.edit_option(k, v)
-        await msg.finish(msg.locale.t("core.message.set.help.option.success", k=k, v=v))
+        if '<target>' in msg.parsed_msg:
+            group = msg.parsed_msg['<target>']
+            target = BotDBUtil.TargetInfo(group)
+            target.clear_petal()
+            await msg.finish(msg.locale.t('core.message.petal.clear', target=group))
+        else:
+            msg.data.clear_petal()
+            await msg.finish(msg.locale.t('core.message.petal.clear.self'))
 
-    lagrange = module('lagrange', required_superuser=True, base=True)
+lagrange = module('lagrange', required_superuser=True, base=True)
 
-    @lagrange.command()
-    async def _(msg: Bot.MessageSession):
-        await msg.finish(f'Keepalive: {str(Temp.data.get("lagrange_keepalive", "None"))}\n'
-                         f'Status: {str(Temp.data.get("lagrange_status", "None"))}\n'
-                         f'Groups: {str(Temp.data.get("lagrange_available_groups", "None"))}')
+@lagrange.command()
+async def _(msg: Bot.MessageSession):
+    await msg.finish(f'Keepalive: {str(Temp.data.get("lagrange_keepalive", "None"))}\n'
+                     f'Status: {str(Temp.data.get("lagrange_status", "None"))}\n'
+                     f'Groups: {str(Temp.data.get("lagrange_available_groups", "None"))}')

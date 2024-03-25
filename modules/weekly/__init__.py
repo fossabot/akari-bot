@@ -6,7 +6,6 @@ import ujson as json
 
 from core.builtins import Bot, Plain, Image, Url
 from core.component import module
-from core.logger import Logger
 from core.utils.http import get_url
 from core.utils.i18n import Locale
 from core.utils.image import msgchain2image
@@ -34,7 +33,7 @@ async def get_weekly(with_img=False, zh_tw=False):
 
     img_filename = re.match(r'/w/(.*)', img.attrs['href'])
     page = re.findall(r'(?<=<b><a href=").*?(?=")', str(content))
-    msg_list = [Plain(locale.t("weekly.message.error.expired") if page[
+    msg_list = [Plain(locale.t("weekly.message.expired") if page[
         0] == '/w/%E7%8E%BB%E7%92%83' else locale.t(
         "weekly.message", text=text))]
     imglink = None
@@ -46,12 +45,12 @@ async def get_weekly(with_img=False, zh_tw=False):
         Plain(
             locale.t(
                 "weekly.message.link",
-                img=imglink if imglink is not None else locale.t("none"),
+                img=imglink if imglink else locale.t("none"),
                 article=str(
                     Url(f'https://zh.minecraft.wiki{page[0]}')),
                 link=str(
                     Url(f'https://zh.minecraft.wiki/wiki/?oldid={str(result["parse"]["revid"])}')))))
-    if imglink is not None and with_img:
+    if imglink and with_img:
         msg_list.append(Image(path=imglink))
 
     return msg_list
