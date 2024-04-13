@@ -1,10 +1,9 @@
 from config import Config
 from core.builtins import Bot
-from core.utils.i18n import Locale
+from core.utils.i18n import Locale, default_locale
 from database import BotDBUtil
 
-lang = Config('locale')
-report_targets = Config('report_targets')
+report_targets = Config('report_targets', [])
 WARNING_COUNTS = Config('tos_warning_counts', 5)
 
 
@@ -22,8 +21,8 @@ async def warn_target(msg: Bot.MessageSession, reason=None):
                     'tos.message.warning.count',
                     current_warns=current_warns,
                     warn_counts=WARNING_COUNTS))
-            if current_warns <= 2 and Config('issue_url'):
-                warn_template.append(msg.locale.t('tos.message.appeal', issue_url=Config('issue_url')))
+            if current_warns <= 2 and Config('issue_url', cfg_type = str):
+                warn_template.append(msg.locale.t('tos.message.appeal', issue_url=Config('issue_url', cfg_type = str)))
         elif current_warns == WARNING_COUNTS:
             await tos_report(msg.target.sender_id, msg.target.target_id, reason)
             warn_template.append(msg.locale.t('tos.message.warning.last'))
@@ -31,8 +30,8 @@ async def warn_target(msg: Bot.MessageSession, reason=None):
             msg.target.sender_info.edit('isInBlockList', True)
             await tos_report(msg.target.sender_id, msg.target.target_id, reason, banned=True)
             warn_template.append(msg.locale.t('tos.message.banned'))
-            if Config('issue_url'):
-                warn_template.append(msg.locale.t('tos.message.appeal', issue_url=Config('issue_url')))
+            if Config('issue_url', cfg_type = str):
+                warn_template.append(msg.locale.t('tos.message.appeal', issue_url=Config('issue_url', cfg_type = str)))
         await msg.send_message('\n'.join(warn_template))
 
 
@@ -49,7 +48,7 @@ async def warn_user(user: str, count=1):
 
 
 async def tos_report(sender, target, reason=None, banned=False):
-    locale = Locale(lang)
+    locale = Locale(default_locale)
     if report_targets:
         warn_template = [locale.t("tos.message.report", sender=sender, target=target)]
         if reason:

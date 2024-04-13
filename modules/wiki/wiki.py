@@ -218,8 +218,7 @@ async def query_pages(session: Union[Bot.MessageSession, QueryInfo], title: Unio
                             plain_slice.append(r.desc)
 
                     if r.link:
-                        plain_slice.append(
-                            str(Url(r.link, use_mm=not r.info.in_allowlist)))
+                        plain_slice.append(str(Url(r.link, use_mm=not r.info.in_allowlist)))
 
                     if r.file:
                         dl_list.append(r.file)
@@ -243,7 +242,7 @@ async def query_pages(session: Union[Bot.MessageSession, QueryInfo], title: Unio
                                 i_msg_lst.append(Image(await
                                                        image_table_render(
                                                            ImageTable(session_data,
-                                                                      ['ID',
+                                                                      [session.locale.t('wiki.message.table.id'),
                                                                        session.locale.t('wiki.message.table.section')]))))
                                 i_msg_lst.append(Plain(session.locale.t('wiki.message.invalid_section.select')))
                                 i_msg_lst.append(Plain(session.locale.t('message.reply.prompt')))

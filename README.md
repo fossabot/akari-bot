@@ -20,7 +20,7 @@
 -   QQ
 -   Discord
 -   Telegram
--   Kook
+-   KOOK
 -   Matrix
 
 ## 运行
@@ -45,11 +45,15 @@
 
 #### Telegram
 
-链接：<https://t.me/oasisakaribot>，支持私聊和群聊。
+邀请链接：<https://t.me/oasisakaribot>
 
-#### Kook
+#### KOOK
 
 邀请链接：<https://www.kookapp.cn/app/oauth2/authorize?id=19512&permissions=949248&client_id=xiDWoVygvPsP6bov&redirect_uri=&scope=bot>
+
+#### Matrix
+
+邀请链接：<https://matrix.to/#/@akaribot:matrix.org>
 
 ### 自搭建
 

@@ -6,14 +6,16 @@ import psutil
 from cpuinfo import get_cpu_info
 
 from config import Config
-from core.builtins import Bot
+from core.builtins import Bot, Plain, Url
 from core.component import module
 from core.utils.i18n import get_available_locales, Locale, load_locale_file
 from core.utils.info import Info
 from core.utils.web_render import WebRender
 from database import BotDBUtil
 
-jwt_secret = Config('jwt_secret')
+import subprocess
+
+jwt_secret = Config('jwt_secret', cfg_type = str)
 
 ver = module('version', base=True)
 
@@ -21,7 +23,11 @@ ver = module('version', base=True)
 @ver.command('{{core.help.version}}')
 async def bot_version(msg: Bot.MessageSession):
     if Info.version:
-        await msg.finish(msg.locale.t('core.message.version', commit=Info.version[0:6]))
+        commit = Info.version[0:6]
+        repo_url = subprocess.check_output(['git', 'config', '--get', 'remote.origin.url']).decode().strip()
+        repo_url = repo_url.replace('.git', '')  # Remove .git from the repo URL
+        commit_url = f"{repo_url}/commit/{commit}"
+        await msg.finish([Plain(msg.locale.t('core.message.version', commit=commit)), Url(commit_url)])
     else:
         await msg.finish(msg.locale.t('core.message.version.unknown'))
 
@@ -37,6 +43,7 @@ async def _(msg: Bot.MessageSession):
     if msg.check_super_user():
         timediff = str(datetime.now() - started_time)
         boot_start = msg.ts2strftime(psutil.boot_time())
+        web_render_status = str(WebRender.status)
         cpu_usage = psutil.cpu_percent()
         ram = int(psutil.virtual_memory().total / (1024 * 1024))
         ram_percent = psutil.virtual_memory().percent
@@ -44,11 +51,11 @@ async def _(msg: Bot.MessageSession):
         swap_percent = psutil.swap_memory().percent
         disk = int(psutil.disk_usage('/').used / (1024 * 1024 * 1024))
         disk_total = int(psutil.disk_usage('/').total / (1024 * 1024 * 1024))
-        web_render_status = str(WebRender.status)
         result += '\n' + msg.locale.t("core.message.ping.detail",
                                       system_boot_time=boot_start,
                                       bot_running_time=timediff,
                                       python_version=platform.python_version(),
+                                      web_render_status=web_render_status,
                                       cpu_brand=get_cpu_info()['brand_raw'],
                                       cpu_usage=cpu_usage,
                                       ram=ram,
@@ -56,8 +63,7 @@ async def _(msg: Bot.MessageSession):
                                       swap=swap,
                                       swap_percent=swap_percent,
                                       disk_space=disk,
-                                      disk_space_total=disk_total,
-                                      web_render_status=web_render_status)
+                                      disk_space_total=disk_total)
     await msg.finish(result)
 
 
@@ -138,8 +144,8 @@ async def _(msg: Bot.MessageSession):
     res = msg.locale.t("core.message.locale", lang=msg.locale.t("language")) + '\n' + \
         msg.locale.t("core.message.locale.set.prompt", prefix=msg.prefixes[0]) + '\n' + \
         msg.locale.t("core.message.locale.langlist", langlist=avaliable_lang)
-    if Config('locale_url'):
-        res += '\n' + msg.locale.t("core.message.locale.contribute", url=Config('locale_url'))
+    if Config('locale_url', cfg_type = str):
+        res += '\n' + msg.locale.t("core.message.locale.contribute", url=Config('locale_url', cfg_type = str))
     await msg.finish(res)
 
 
@@ -238,7 +244,7 @@ async def _(msg: Bot.MessageSession):
         await msg.finish(msg.locale.t('core.message.mute.disable'))
 
 
-leave = module('leave', base=True, required_admin=True, available_for='QQ|Group', alias='dismiss')
+leave = module('leave', base=True, required_admin=True, available_for=['QQ|Group'], alias='dismiss')
 
 
 @leave.command('{{core.help.leave}}')
@@ -251,7 +257,7 @@ async def _(msg: Bot.MessageSession):
         await msg.finish()
 
 
-token = module('token', base=True)
+token = module('token', base=True, hide=True)
 
 
 @token.command('<code> {{core.help.token}}')

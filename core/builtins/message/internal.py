@@ -12,6 +12,7 @@ from PIL import Image as PImage
 from tenacity import retry, stop_after_attempt
 
 from config import Config
+from core.builtins.utils import shuffle_joke
 from core.types.message.internal import (Plain as PlainT, Image as ImageT, Voice as VoiceT, Embed as EmbedT,
                                          EmbedField as EmbedFieldT, Url as UrlT, ErrorMessage as EMsg)
 from core.types.message import MessageSession
@@ -19,11 +20,12 @@ from core.utils.i18n import Locale
 
 
 class Plain(PlainT):
-    def __init__(self,
-                 text, *texts):
+    def __init__(self, text, *texts, disable_joke: bool = False):
         self.text = str(text)
         for t in texts:
             self.text += str(t)
+        if not disable_joke:
+            self.text = shuffle_joke(self.text)
 
     def __str__(self):
         return self.text
@@ -137,8 +139,8 @@ class ErrorMessage(EMsg):
                 for l in locale_str:
                     error_message = error_message.replace(f'{{{l}}}', locale.t(l))
             self.error_message = locale.t('error') + error_message
-            if Config('bug_report_url'):
-                self.error_message += '\n' + locale.t('error.prompt.address', url=str(Url(Config('bug_report_url'))))
+            if Config('bug_report_url', cfg_type = str):
+                self.error_message += '\n' + locale.t('error.prompt.address', url=str(Url(Config('bug_report_url', cfg_type = str))))
 
     def __str__(self):
         return self.error_message
@@ -157,7 +159,7 @@ class Image(ImageT):
         self.path = path
         self.headers = headers
         if isinstance(path, PImage.Image):
-            save = f'{Config("cache_path")}{str(uuid.uuid4())}.png'
+            save = f'{Config("cache_path", "./cache/")}{str(uuid.uuid4())}.png'
             path.convert('RGBA').save(save)
             self.path = save
         elif re.match('^https?://.*', path):
@@ -175,7 +177,7 @@ class Image(ImageT):
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=20)) as req:
                 raw = await req.read()
                 ft = filetype.match(raw).extension
-                img_path = f'{Config("cache_path")}{str(uuid.uuid4())}.{ft}'
+                img_path = f'{Config("cache_path", "./cache/")}{str(uuid.uuid4())}.{ft}'
                 with open(img_path, 'wb+') as image_cache:
                     image_cache.write(raw)
                 return img_path

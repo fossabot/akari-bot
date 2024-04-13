@@ -9,16 +9,16 @@ from khl import MessageTypes, Message
 from bots.kook.client import bot
 from bots.kook.info import client_name
 from config import Config
-from core.builtins import Bot, Plain, Image, Voice, MessageSession as MessageSessionT, ErrorMessage, MessageTaskManager
+from core.builtins import Bot, Plain, Image, Voice, MessageSession as MessageSessionT, MessageTaskManager
 from core.builtins.message.chain import MessageChain
 from core.logger import Logger
 from core.types import FetchTarget as FetchTargetT, \
     FinishedSession as FinS
 from database import BotDBUtil
 
-enable_analytics = Config('enable_analytics')
+enable_analytics = Config('enable_analytics', False)
 kook_base = "https://www.kookapp.cn"
-kook_headers = {f'Authorization': f"Bot {Config('kook_token')}"}
+kook_headers = {f'Authorization': f"Bot {Config('kook_token', cfg_type = str)}"}
 
 
 async def direct_msg_delete(msg_id: str):
@@ -72,7 +72,7 @@ class MessageSession(MessageSessionT):
         self.session.message: Message
         message_chain = MessageChain(message_chain)
         if not message_chain.is_safe and not disable_secret_check:
-            return await self.send_message(Plain(ErrorMessage(self.locale.t("error.message.chain.unsafe"))))
+            await self.send_message(Plain(self.locale.t("error.message.chain.unsafe")))
         self.sent.append(message_chain)
         count = 0
         send = []
@@ -104,7 +104,7 @@ class MessageSession(MessageSessionT):
             msg_ids.append(x['msg_id'])
             if callback:
                 MessageTaskManager.add_callback(x['msg_id'], callback)
-        return FinishedSession(self, msg_ids, {self.session.message.channel_type.name: send})
+        return FinishedSession(self, msg_ids, {self.session.message.channel_type.name.title(): send})
 
     async def check_native_permission(self):
         self.session.message: Message
@@ -172,11 +172,11 @@ class MessageSession(MessageSessionT):
 class FetchedSession(Bot.FetchedSession):
 
     async def send_direct_message(self, message_chain, disable_secret_check=False, allow_split_image=True):
-        if self.target.target_from == 'Kook|GROUP':
+        if self.target.target_from == 'KOOK|Group':
             get_channel = await bot.client.fetch_public_channel(self.session.target)
             if not get_channel:
                 return False
-        elif self.target.target_from == 'Kook|PERSON':
+        elif self.target.target_from == 'KOOK|Person':
             get_channel = await bot.client.fetch_user(self.session.target)
             Logger.debug(f'get_channel: {get_channel}')
             if not get_channel:
@@ -209,12 +209,12 @@ class FetchTarget(FetchTargetT):
 
     @staticmethod
     async def fetch_target(target_id, sender_id=None) -> Union[Bot.FetchedSession]:
-        match_channel = re.match(r'^(Kook\|.*?)\|(.*)', target_id)
+        match_channel = re.match(r'^(KOOK\|.*?)\|(.*)', target_id)
         if match_channel:
             target_from = sender_from = match_channel.group(1)
             target_id = match_channel.group(2)
             if sender_id:
-                match_sender = re.match(r'^(Kook\|User)\|(.*)', sender_id)
+                match_sender = re.match(r'^(KOOK\|User)\|(.*)', sender_id)
                 if match_sender:
                     sender_from = match_sender.group(1)
                     sender_id = match_sender.group(2)
@@ -249,7 +249,7 @@ class FetchTarget(FetchTargetT):
                 except Exception:
                     Logger.error(traceback.format_exc())
         else:
-            get_target_id = BotDBUtil.TargetInfo.get_enabled_this(module_name, "Kook")
+            get_target_id = BotDBUtil.TargetInfo.get_enabled_this(module_name, "KOOK")
             for x in get_target_id:
                 fetch = await FetchTarget.fetch_target(x.targetId)
                 if fetch:

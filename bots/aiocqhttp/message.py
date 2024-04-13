@@ -25,7 +25,7 @@ from core.utils.image import msgchain2image
 from core.utils.storedata import get_stored_list
 from database import BotDBUtil
 
-enable_analytics = Config('enable_analytics')
+enable_analytics = Config('enable_analytics', False)
 
 
 class FinishedSession(FinS):
@@ -33,7 +33,7 @@ class FinishedSession(FinS):
         """
         用于删除这条消息。
         """
-        if self.session.target.target_from in ['QQ|Group', 'QQ']:
+        if self.session.target.target_from in ['QQ|Group', 'QQ|Private']:
             try:
                 for x in self.message_id:
                     if x != 0:
@@ -179,7 +179,7 @@ class MessageSession(MessageSessionT):
         return FinishedSession(self, send['message_id'], [send])
 
     async def check_native_permission(self):
-        if self.target.target_from == 'QQ':
+        if self.target.target_from == 'QQ|Private':
             return True
         elif self.target.target_from == 'QQ|Group':
             get_member_info = await bot.call_action('get_group_member_info', group_id=self.session.target,
@@ -219,7 +219,7 @@ class MessageSession(MessageSessionT):
             await bot.call_action('send_group_forward_msg', group_id=int(self.session.target), messages=nodelist)
 
     async def delete(self):
-        if self.target.target_from in ['QQ', 'QQ|Group']:
+        if self.target.target_from in ['QQ|Private', 'QQ|Group']:
             try:
                 if isinstance(self.session.message, list):
                     for x in self.session.message:
@@ -277,7 +277,7 @@ class MessageSession(MessageSessionT):
                     if datetime.datetime.now().timestamp() - last_send_typing_time[self.msg.session.sender] <= 3600:
                         return
                 last_send_typing_time[self.msg.session.sender] = datetime.datetime.now().timestamp()
-                action = 'touch' if Config('use_shamrock') else 'poke'
+                action = 'touch' if Config('use_shamrock', False) else 'poke'
                 await bot.send_group_msg(group_id=self.msg.session.target,
                                          message=f'[CQ:{action},qq={self.msg.session.sender}]')
 
@@ -290,7 +290,7 @@ class FetchTarget(FetchTargetT):
 
     @staticmethod
     async def fetch_target(target_id, sender_id=None) -> Union[Bot.FetchedSession]:
-        match_target = re.match(r'^(QQ\|Group|QQ\|Guild|QQ)\|(.*)', target_id)
+        match_target = re.match(r'^(QQ\|Group|QQ\|Guild|QQ\|Private)\|(.*)', target_id)
         if match_target:
             target_from = sender_from = match_target.group(1)
             target_id = match_target.group(2)
@@ -328,7 +328,7 @@ class FetchTarget(FetchTargetT):
                 if fet.target.target_from == 'QQ|Group':
                     if fet.session.target not in group_list:
                         continue
-                if fet.target.target_from == 'QQ':
+                if fet.target.target_from == 'QQ|Private':
                     if fet.session.target not in friend_list:
                         continue
                 if fet.target.target_from == 'QQ|Guild':
@@ -390,7 +390,7 @@ class FetchTarget(FetchTargetT):
             for x in user_list:
                 await post_(x)
         else:
-            get_target_id = BotDBUtil.TargetInfo.get_enabled_this(module_name, "QQ")
+            get_target_id = BotDBUtil.TargetInfo.get_enabled_this(module_name, "QQ|Private")
             group_list_raw = await bot.call_action('get_group_list')
             group_list = [g['group_id'] for g in group_list_raw]
             friend_list_raw = await bot.call_action('get_friend_list')
@@ -417,14 +417,14 @@ class FetchTarget(FetchTargetT):
                     if fetch.target.target_from == 'QQ|Group':
                         if int(fetch.session.target) not in group_list:
                             continue
-                    if fetch.target.target_from == 'QQ':
+                    if fetch.target.target_from == 'QQ|Private':
                         if int(fetch.session.target) not in friend_list:
                             continue
                     if fetch.target.target_from == 'QQ|Guild':
                         if fetch.session.target not in guild_list:
                             continue
 
-                    if fetch.target.target_from in ['QQ', 'QQ|Guild']:
+                    if fetch.target.target_from in ['QQ|Private', 'QQ|Guild']:
                         in_whitelist.append(post_(fetch))
                     else:
                         load_options: dict = json.loads(x.options)

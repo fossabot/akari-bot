@@ -7,10 +7,14 @@ from core.utils.image_table import image_table_render, ImageTable
 from modules.wiki.utils.dbutils import Audit
 from modules.wiki.utils.wikilib import WikiLib
 
+audit_available_list = ["KOOK|Group", "QQ|Group", "QQ|Guild", "QQ|Private"]
 
-if Config('enable_urlmanager'):
-    aud = module('wiki_audit', required_superuser=True,
-                 alias='wau')
+
+if Config('enable_urlmanager', False):
+    aud = module('wiki_audit',
+                 required_superuser=True,
+                 alias='wau',
+                 available_for=audit_available_list)
 
     @aud.command(['trust <apilink>',
                   'block <apilink>'])
@@ -28,7 +32,7 @@ if Config('enable_urlmanager'):
             if not res:
                 await msg.finish(msg.locale.t('wiki.message.wiki_audit.add.failed', list_name=list_name, api=apilink))
             else:
-                await msg.finish(msg.locale.t('wiki.message.wiki_audit.add.success', list_name=list_name) + apilink)
+                await msg.finish(msg.locale.t('wiki.message.wiki_audit.add.success', list_name=list_name, api=apilink))
         else:
             result = msg.locale.t('wiki.message.error.add') + \
                 ('\n' + msg.locale.t('wiki.message.error.info') + check.message if check.message != '' else '')
@@ -48,7 +52,7 @@ if Config('enable_urlmanager'):
         if not res:
             await msg.finish(msg.locale.t('wiki.message.wiki_audit.remove.failed', list_name=list_name, api=apilink))
         else:
-            await msg.finish(msg.locale.t('wiki.message.wiki_audit.remove.success', list_name=list_name) + apilink)
+            await msg.finish(msg.locale.t('wiki.message.wiki_audit.remove.success', list_name=list_name, api=apilink))
 
     @aud.command('query <apilink>')
     async def _(msg: Bot.MessageSession, apilink: str):
@@ -71,12 +75,12 @@ if Config('enable_urlmanager'):
                 ('\n' + msg.locale.t('wiki.message.error.info') + check.message if check.message != '' else '')
             await msg.finish(result)
 
-    @aud.command('list [-l]')
+    @aud.command('list [legacy]')
     async def _(msg: Bot.MessageSession):
         allow_list = Audit.get_allow_list()
         block_list = Audit.get_block_list()
         legacy = True
-        if not msg.parsed_msg.get('-l', False) and msg.Feature.image:
+        if not msg.parsed_msg.get('legacy', False) and msg.Feature.image:
             send_msgs = []
             allow_columns = [[x[0], x[1]] for x in allow_list]
             if allow_columns:
